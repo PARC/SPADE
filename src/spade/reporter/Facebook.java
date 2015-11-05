@@ -21,7 +21,6 @@ package spade.reporter;
 
 import com.restfb.Connection;
 import com.restfb.DefaultFacebookClient;
-import com.restfb.exception.FacebookException;
 import com.restfb.FacebookClient;
 import com.restfb.types.Comment;
 import com.restfb.types.NamedFacebookType;

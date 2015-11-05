@@ -146,7 +146,7 @@ public class AndroidThreadAggregator extends AbstractFilter {
     // Reference to flushed out processes
     private Map<String, AbstractVertex> flushedOutVertices = new HashMap<>();
     private ArrayList<AbstractEdge> shelvedEdges = new ArrayList<>();
-    private Set<AbstractVertex> shelvedThreads = new HashSet<>();
+    // private Set<AbstractVertex> shelvedThreads = new HashSet<>();
 
     @Override
     public void putVertex(AbstractVertex incomingVertex) {

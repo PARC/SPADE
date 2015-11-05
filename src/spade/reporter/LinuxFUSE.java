@@ -230,10 +230,10 @@ public class LinuxFUSE extends AbstractReporter {
             BufferedReader procReader = new BufferedReader(new FileReader("/proc/" + pid + "/status"));
             String nameline = procReader.readLine();
             procReader.readLine();
-            String tgidline = procReader.readLine();
+            /* String tgidline = */ procReader.readLine();
             procReader.readLine();
             String ppidline = procReader.readLine();
-            String tracerpidline = procReader.readLine();
+            /* String tracerpidline = */ procReader.readLine();
             String uidline = procReader.readLine();
             String gidline = procReader.readLine();
             procReader.close();

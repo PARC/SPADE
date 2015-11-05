@@ -46,6 +46,7 @@ public class MatrixFilter implements Serializable {
     private int expectedNumberOfElements; // expected (maximum) number of elements to be added
     private int numberOfAddedElements; // number of elements actually added to the Bloom filter
     private int k; // number of hash functions
+    private static final long serialVersionUID = 1L;
     static final Charset charset = Charset.forName("UTF-8"); // encoding used for storing hash values as strings
     static final String hashName = "MD5"; // MD5 gives good enough accuracy in most circumstances. Change to SHA1 if it's needed
     static final MessageDigest digestFunction;

@@ -152,7 +152,7 @@ public class Kernel {
     private static final String QUERY_PRINT_STRING = "<result>.print(annotations)";
     private static final String QUERY_EXPORT_STRING = "export <result> <path>";
     private static final String QUERY_LIST_STRING = "list";
-    private static final String QUERY_SELECT_STORAGE = "storage Neo4j|SQL (default: Neo4j)";    
+    // private static final String QUERY_SELECT_STORAGE = "storage Neo4j|SQL (default: Neo4j)";    
     private static final String QUERY_EXIT_STRING = "exit";
     private static final Logger logger = Logger.getLogger(Kernel.class.getName());
     private static boolean ANDROID_PLATFORM = false;
@@ -632,8 +632,7 @@ public class Kernel {
         // Determine whether the command is a load or a save.
         if (tokens[1].equalsIgnoreCase("load")) {
             outputStream.print("Loading configuration... ");
-            try {
-                BufferedReader configReader = new BufferedReader(new FileReader(tokens[2]));
+            try (BufferedReader configReader = new BufferedReader(new FileReader(tokens[2]))) {
                 String configLine;
                 while ((configLine = configReader.readLine()) != null) {
                     addCommand("add " + configLine, outputStream);

@@ -35,7 +35,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.Arrays;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import spade.core.AbstractReporter;
@@ -56,8 +55,8 @@ public class Strace extends AbstractReporter {
 
     PrintWriter logWriter;
     final boolean LOG_DEBUG_INFO = true;
-    final boolean TRACE_SYSTEM = false;
-    final boolean TRACE_APPS = false;
+    boolean TRACE_SYSTEM = false;
+    boolean TRACE_APPS = false;
     final boolean ADD_BEHAVIOR_TAGS = false;
     final int THREAD_SLEEP_DELAY = 5;
     volatile boolean shutdown = false;
