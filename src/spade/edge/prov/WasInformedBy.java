@@ -29,8 +29,6 @@ import spade.vertex.prov.Activity;
  */
 public class WasInformedBy extends AbstractEdge {
 
-    private static final long serialVersionUID = 1L;
-
     /**
      * Constructor for Activity->Activity edge
      *

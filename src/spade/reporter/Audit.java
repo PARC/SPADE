@@ -497,7 +497,7 @@ public class Audit extends AbstractReporter {
     	
         Matcher event_start_matcher = pattern_message_start.matcher(line);
         if (event_start_matcher.find()) {
-            // String node = event_start_matcher.group(1);
+            String node = event_start_matcher.group(1);
             String type = event_start_matcher.group(2);
             String time = event_start_matcher.group(3);
             String eventId = event_start_matcher.group(4);
@@ -1957,9 +1957,9 @@ public class Audit extends AbstractReporter {
 
                 String stats[] = statline.split("\\s+");
                 long elapsedtime = Long.parseLong(stats[21]) * 10;
-                // long starttime = boottime + elapsedtime;
-                // String stime_readable = new java.text.SimpleDateFormat(simpleDatePattern).format(new java.util.Date(starttime));
-                // String stime = Long.toString(starttime);
+                long starttime = boottime + elapsedtime;
+                String stime_readable = new java.text.SimpleDateFormat(simpleDatePattern).format(new java.util.Date(starttime));
+                String stime = Long.toString(starttime);
 
                 String name = nameline.split("\\s+")[1];
                 String ppid = ppidline.split("\\s+")[1];

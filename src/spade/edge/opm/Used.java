@@ -30,8 +30,6 @@ import spade.vertex.opm.Process;
  */
 public class Used extends AbstractEdge {
 
-    private static final long serialVersionUID = 1L;
-
     /**
      * Constructor for Process->Artifact edge
      *

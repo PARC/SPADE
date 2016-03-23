@@ -51,7 +51,7 @@ public class SQL extends AbstractStorage {
     private final String VERTEX_TABLE = "VERTEX";
     private final String EDGE_TABLE = "EDGE";
     private final boolean ENABLE_SANITAZATION = true;
-    // private static final String ID_STRING = Settings.getProperty("storage_identifier");
+    private static final String ID_STRING = Settings.getProperty("storage_identifier");
     private static final String DIRECTION_ANCESTORS = Settings.getProperty("direction_ancestors");
     private static final String DIRECTION_DESCENDANTS = Settings.getProperty("direction_descendants");
 

@@ -86,7 +86,6 @@ public class Prov extends AbstractStorage{
     }
     
     private final Map<String, String> provoStringFormatsForEdgeTypes = new HashMap<String, String>(){
-        private static final long serialVersionUID = 1L;
 		{
 			put("spade.edge.prov.Used", "%s:%s %s:qualifiedUsage [\n\ta %s:Usage;\n\t%s:entity %s:%s;\n%s]; .\n\n");
 			put("spade.edge.prov.WasAssociatedWith", "%s:%s %s:qualifiedAssociation [\n\ta %s:Association;\n\t%s:agent %s:%s;\n%s]; .\n\n");
@@ -97,7 +96,6 @@ public class Prov extends AbstractStorage{
 	};
 	
 	private final Map<String, String> provnStringFormatsForEdgeTypes = new HashMap<String, String>(){
-	    private static final long serialVersionUID = 1L;
 		{
 			put("spade.edge.prov.Used", "\tused(%s:%s,%s:%s, - ,%s)\n");
 			put("spade.edge.prov.WasAssociatedWith", "\twasAssociatedWith(%s:%s,%s:%s, - ,%s)\n");

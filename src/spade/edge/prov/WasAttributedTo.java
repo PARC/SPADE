@@ -30,8 +30,6 @@ import spade.vertex.prov.Agent;
  */
 public class WasAttributedTo extends AbstractEdge {
 
-    private static final long serialVersionUID = 1L;
-
     /**
      * Constructor for Entity->Agent edge
      *

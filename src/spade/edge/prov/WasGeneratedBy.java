@@ -30,8 +30,6 @@ import spade.vertex.prov.Entity;
  */
 public class WasGeneratedBy extends AbstractEdge {
 
-    private static final long serialVersionUID = 1L;
-
     /**
      * Constructor for Entity->Activity edge
      *
