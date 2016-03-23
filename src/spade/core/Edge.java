@@ -26,6 +26,8 @@ package spade.core;
  */
 public class Edge extends AbstractEdge {
 
+    private static final long serialVersionUID = 1L;
+
     /**
      * Constructor taking only the source and destination vertices.
      *

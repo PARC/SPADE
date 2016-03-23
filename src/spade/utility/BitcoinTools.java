@@ -21,59 +21,36 @@
  */
 package spade.utility;
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileFilter;
-import java.util.Scanner;
+import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.IOException;
-import java.lang.SecurityException;
-import java.util.Formatter;
-import java.text.DecimalFormat;
-import org.apache.commons.io.FileUtils;
-import java.net.URL;
+import java.io.InputStreamReader;
 import java.net.MalformedURLException;
-import org.json.JSONObject;
-import org.json.JSONArray;
-import org.json.JSONException;
-
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.Arrays;
-import javax.xml.bind.DatatypeConverter;
-import java.util.Calendar;
-import java.util.Date;
-import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.OutputStreamWriter;
-import java.io.FileInputStream;
-import java.io.Writer;
-
+import java.text.DecimalFormat;
+import java.util.Formatter;
+import java.util.HashMap;
+import java.util.Scanner;
+import java.util.logging.Level;
+import org.apache.commons.io.FileUtils;
+import org.json.JSONException;
+import org.json.JSONObject;
+import spade.reporter.Bitcoin;
 import spade.reporter.bitcoin.Block;
 import spade.reporter.bitcoin.Transaction;
 import spade.reporter.bitcoin.Vin;
 import spade.reporter.bitcoin.Vout;
-import spade.reporter.Bitcoin;
 
 public class BitcoinTools {
 
     public final String BITCOIN_RPC_TOTAL_BLOCKS = "bitcoin-cli getblockcount";
     public final String BITCOIN_RPC_GET_BLOCK_HASH_FORMAT = "bitcoin-cli getblockhash %1$1s";
     public final String BITCOIN_REST_GET_BLOCK_FORMAT = "http://localhost:8332/rest/block/%1$1s.json";
-    public final boolean BLOCK_JSON_DUMP_ENABLED = true;
+    public boolean BLOCK_JSON_DUMP_ENABLED = true;
     public String BLOCK_JSON_DUMP_PATH = Bitcoin.BITCOIN_STAGING_DIR + "/blockcache/";
     public String BLOCK_JSON_FILE_FORMAT = Bitcoin.BITCOIN_STAGING_DIR + "/blockcache/%1$1s.json";
 

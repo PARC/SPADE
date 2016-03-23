@@ -87,8 +87,8 @@ public class Neo4j extends AbstractStorage {
     private int flushCount;
     private Map<String, Long> spadeNeo4jCache;
     private Map<String, Long> uncommittedSpadeNeo4jCache;
-    private final Pattern longPattern = Pattern.compile("^[-+]?[0-9]+$");
-    private final Pattern doublePattern = Pattern.compile("^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$");
+    // private final Pattern longPattern = Pattern.compile("^[-+]?[0-9]+$");
+    // private final Pattern doublePattern = Pattern.compile("^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$");
     static final Logger logger = Logger.getLogger(Neo4j.class.getName());
     private final String NEO_CONFIG_FILE = "cfg/neo4j.properties";
 
@@ -136,7 +136,8 @@ public class Neo4j extends AbstractStorage {
         }
     }
     
-    private void loadSpadeNeo4jCache(){
+    @SuppressWarnings("unchecked")
+	private void loadSpadeNeo4jCache(){
     	File spadeNeo4jCacheFile = new File(neo4jDatabaseDirectoryPath + File.separatorChar + spadeNeo4jCacheFilePath);
     	if(spadeNeo4jCacheFile.exists()){
     		long start = System.currentTimeMillis();

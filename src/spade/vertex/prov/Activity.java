@@ -12,6 +12,8 @@ import spade.core.AbstractVertex;
  */
 public class Activity extends AbstractVertex {
 
+    private static final long serialVersionUID = 1L;
+
     public Activity() {
         addAnnotation("type", "Activity");
     }

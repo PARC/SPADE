@@ -80,8 +80,8 @@ public class Graph extends AbstractStorage implements Serializable {
 
     private static final Pattern nodePattern = Pattern.compile("\"(.*)\" \\[label=\"(.*)\" shape=\"(\\w*)\" fillcolor=\"(\\w*)\"", Pattern.DOTALL);
     private static final Pattern edgePattern = Pattern.compile("\"(.*)\" -> \"(.*)\" \\[label=\"(.*)\" color=\"(\\w*)\"", Pattern.DOTALL);
-    private static final Pattern longPattern = Pattern.compile("^[-+]?[0-9]+$");
-    private static final Pattern doublePattern = Pattern.compile("^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$");
+    // private static final Pattern longPattern = Pattern.compile("^[-+]?[0-9]+$");
+    // private static final Pattern doublePattern = Pattern.compile("^[-+]?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$");
 
     private transient Analyzer analyzer = new KeywordAnalyzer();
     private transient QueryParser queryParser = new QueryParser(Version.LUCENE_35, null, analyzer);
@@ -92,6 +92,7 @@ public class Graph extends AbstractStorage implements Serializable {
     private Map<Integer, AbstractEdge> edgeIdentifiers = new HashMap<>();
     private Map<AbstractEdge, Integer> reverseEdgeIdentifiers = new HashMap<>();
     private Map<AbstractVertex, Integer> networkMap = new HashMap<>();
+    private static final long serialVersionUID = 1L;
     private int serial_number = 1;
     /**
      * For query results spanning multiple hosts, this is used to indicate

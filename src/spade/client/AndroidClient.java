@@ -75,9 +75,8 @@ public class AndroidClient {
             }
         };
 
-        try {
+        try (Socket remoteSocket = new Socket()) {
             SocketAddress sockaddr = new InetSocketAddress("localhost", Integer.parseInt(Settings.getProperty("local_control_port")));
-            Socket remoteSocket = new Socket();
             remoteSocket.connect(sockaddr, Integer.parseInt(Settings.getProperty("connection_timeout")));
             OutputStream outStream = remoteSocket.getOutputStream();
             InputStream inStream = remoteSocket.getInputStream();

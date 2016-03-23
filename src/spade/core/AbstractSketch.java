@@ -29,6 +29,8 @@ import java.util.Map;
  */
 public abstract class AbstractSketch implements Serializable {
 
+    private static final long serialVersionUID = 1L;
+
     /**
      * The matrix filter belonging to this sketch.
      */
