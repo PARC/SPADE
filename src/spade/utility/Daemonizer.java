@@ -42,8 +42,8 @@ public class Daemonizer {
     }
 
     public boolean pidFileExists() {
-        File f = new File(pidFile);
-        return f.exists() && !f.isDirectory() ;
+        File file = new File(pidFile);
+        return file.exists() && !file.isDirectory() ;
     }
 
     public int getPidFromFile() throws IOException{
@@ -58,8 +58,8 @@ public class Daemonizer {
 
     public boolean isProcessRunning(int pid) throws IOException {
         String line = "";
-        Process proc = Runtime.getRuntime().exec("ps -ef"); // portable across *nix
-        InputStream stream = proc.getInputStream();
+        Process process = Runtime.getRuntime().exec("ps -ef"); // portable across *nix
+        InputStream stream = process.getInputStream();
         BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
         while ((line = reader.readLine()) != null) {
             line = line.trim().replaceAll(" +", " ");
@@ -76,9 +76,7 @@ public class Daemonizer {
             System.out.println("Starting SPADE as a daemon with PID: " + CLibrary.LIBC.getpid() );
             daemon.init(pidFile);
         } else {
-            // daemon.daemonize(configureJVMArguments());
             daemon.daemonize();
-
             System.exit(0);
         }
         spade.core.Kernel.main(new String[0]);
@@ -92,14 +90,14 @@ public class Daemonizer {
             
             try {
                 pidfromfile = getPidFromFile();
-            } catch (IOException e) {
+            } catch (IOException exception) {
                 System.err.println("PID file exists, but is not readable.");
                 System.exit(1);
             }
 
             try {
                 processRunning = isProcessRunning(pidfromfile);
-            } catch (IOException e) {
+            } catch (IOException exception) {
                 System.err.println("Can not determine if SPADE is running.");
                 System.exit(1);
             }
@@ -114,14 +112,14 @@ public class Daemonizer {
 
         try{
             runSpadeProcess();
-        } catch (Exception e) {
-            System.err.println("Error daemonizing SPADE: " + e.getMessage());
+        } catch (Exception exception) {
+            System.err.println("Error daemonizing SPADE: " + exception.getMessage());
             System.exit(1);            
         }
 
     }
 
-    public void stop() {
+    public void stop(int signum) {
         int pidfromfile = 0;
         boolean processRunning = false;
 
@@ -129,21 +127,21 @@ public class Daemonizer {
             
             try {
                 pidfromfile = getPidFromFile();
-            } catch (IOException e) {
+            } catch (IOException exception) {
                 System.err.println("PID file exists, but is not readable.");
                 System.exit(1);
             }
 
             try {
                 processRunning = isProcessRunning(pidfromfile);
-            } catch (IOException e) {
+            } catch (IOException exception) {
                 System.err.println("Can not determine if SPADE is running.");
                 System.exit(1);
             }
 
             if (processRunning) {
-                System.err.println("Killing SPADE. Process ID: " + pidfromfile);
-                if (CLibrary.LIBC.kill(pidfromfile, 2) != 0 ) { // SIGINT
+                System.err.println("Sending SPADE (Process ID: " + pidfromfile + ") " + ((signum == 2)?"SIGINT":((signum == 9)?"SIGKILL":"SIGNUM "+signum)) );
+                if (CLibrary.LIBC.kill(pidfromfile, signum) != 0 ) { 
                     System.err.println("SPADE process could not be killed.");
                 }
             } else {
@@ -151,8 +149,16 @@ public class Daemonizer {
             }
 
             try {
+                while (isProcessRunning(pidfromfile)) {
+                    Thread.sleep(1000);
+                }
+            } catch (Exception exception) {
+
+            }
+
+            try {
                 Files.delete(Paths.get(pidFile));
-            } catch (Exception e) {
+            } catch (Exception exception) {
                 System.err.println("Could not delete PID file.");
             }
         } else {
@@ -163,16 +169,19 @@ public class Daemonizer {
 
 
     public static void main(String[] arguments) {
-        Daemonizer d = new Daemonizer();
+        Daemonizer daemonizer = new Daemonizer();
         if (arguments.length == 0) {
             System.out.println("args: start | stop | -h");
         }
         if (arguments.length == 1) {
             if (arguments[0].equals("start")) {
-                d.start();
+                daemonizer.start();
             } 
             if(arguments[0].equals("stop")) {
-                d.stop();
+                daemonizer.stop(2); // SIGINT
+            }
+            if(arguments[0].equals("kill")) {
+                daemonizer.stop(9); // SIGKILL
             }
             if (arguments[0].equals("-h")) {
                 System.out.println("args: start | stop | -h");

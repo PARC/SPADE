@@ -20,53 +20,66 @@
  
 package spade.filter;
 
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import spade.core.AbstractEdge;
+import spade.core.AbstractFilter;
 import spade.core.AbstractVertex;
 import spade.core.Settings;
 import spade.utility.FileUtility;
+import spade.vertex.opm.Artifact;
+import spade.vertex.prov.Entity;
 
-public class OPM2ProvTC extends OPM2Prov{
-
-	private final static Logger logger = Logger.getLogger(OPM2ProvTC.class.getName());
+public class Blacklist extends AbstractFilter{
 	
-	private Map<String, String> annotationConversionMap = null; 
+	private static final Logger logger = Logger.getLogger(Blacklist.class.getName());
+	
+	private Pattern fileExclusionPattern;
 	
 	public boolean initialize(String arguments){
-		String filepath = Settings.getDefaultConfigFilePath(this.getClass());
+		
 		try{
-			annotationConversionMap = FileUtility.readOPM2ProvTCFile(filepath);
+			String filepath = Settings.getProperty("blacklist_filter_config_filepath");
+			fileExclusionPattern = FileUtility.constructRegexFromFile(filepath);
+			if(fileExclusionPattern == null){
+				throw new Exception("Regex read from file '"+filepath+"' cannot be null");
+			}
 			return true;
 		}catch(Exception e){
-			logger.log(Level.SEVERE, "Failed to read the file: " + filepath, e);
+			logger.log(Level.WARNING, null, e);
 			return false;
 		}
 	}
 	
+	private boolean isVertexInExclusionPattern(AbstractVertex incomingVertex){
+		if(incomingVertex instanceof Artifact || incomingVertex instanceof Entity){
+			String path = incomingVertex.getAnnotation("path");
+			if(path != null){
+				Matcher filepathMatcher = fileExclusionPattern.matcher(path);
+				return filepathMatcher.find();
+			}
+		}
+		return false;
+	}
+
 	@Override
 	public void putVertex(AbstractVertex incomingVertex) {
-		convertAnnotationsInMap(incomingVertex.getAnnotations());
-		super.putVertex(incomingVertex);
+		if(!isVertexInExclusionPattern(incomingVertex)){
+			super.putInNextFilter(incomingVertex);
+		}
 	}
 
 	@Override
 	public void putEdge(AbstractEdge incomingEdge) {
-		convertAnnotationsInMap(incomingEdge.getAnnotations());
-		super.putEdge(incomingEdge);
-	}
-	
-	private void convertAnnotationsInMap(Map<String, String> map){
-		for(String fromKey : annotationConversionMap.keySet()){
-			String toKey = annotationConversionMap.get(fromKey);
-			if(map.containsKey(fromKey)){
-				String value = map.get(fromKey);
-				map.remove(fromKey);
-				map.put(toKey, value);
+		if(incomingEdge != null){
+			if(!isVertexInExclusionPattern(incomingEdge.getSourceVertex()) 
+					&& !isVertexInExclusionPattern(incomingEdge.getDestinationVertex())){
+				super.putInNextFilter(incomingEdge);
 			}
 		}
-	}	
+	}
 	
 }

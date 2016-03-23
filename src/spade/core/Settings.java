@@ -50,7 +50,6 @@ public class Settings {
             setProperty("storage_identifier", "storageID");
             setProperty("default_query_storage", "Neo4j");
             setProperty("neo4j_webserver", "true");
-            setProperty("opm2provtc_filter_config_filepath", "cfg/opm2provtc-filter.config");
         }
     }
 
@@ -65,4 +64,8 @@ public class Settings {
     public static void saveSettings() throws IOException {
         prop.store(new FileOutputStream(settingsFile), null);
     }
+    
+    public static String getDefaultConfigFilePath(Class<?> forClass){
+		return "cfg/" + forClass.getName() + ".config";
+	}
 }
