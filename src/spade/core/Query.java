@@ -47,7 +47,7 @@ public class Query {
     private static final Logger logger = Logger.getLogger(Query.class.getName());
     protected static final boolean DEBUG_OUTPUT = false;
     private static final String ID_STRING = Settings.getProperty("storage_identifier");
-    // private static final String QUERY_STORAGE = Settings.getProperty("default_query_storage");
+    private static final String QUERY_STORAGE = Settings.getProperty("default_query_storage");
 
     /**
      * This method is used to call query methods on the desired storage. The
@@ -329,8 +329,7 @@ public class Query {
      * destination terminal fragment.
      * @return A path fragment represented by a Graph object.
      */
-    @SuppressWarnings("unchecked")
-	public static Graph getEndPathFragment(AbstractSketch inputSketch, String end) {
+    public static Graph getEndPathFragment(AbstractSketch inputSketch, String end) {
         // Given a remote sketch, this method returns an ending path fragment from the
         // local graph database.
 
@@ -466,8 +465,7 @@ public class Query {
      * @param inputSketch The input sketch.
      * @return A path fragment represented by a Graph object.
      */
-    @SuppressWarnings("unchecked")
-	public static Graph getPathFragment(AbstractSketch inputSketch) {
+    public static Graph getPathFragment(AbstractSketch inputSketch) {
         Graph result = new Graph();
         // Given a remote sketch, this method is used to generate the path fragment.
         // The following is done:

@@ -37,7 +37,6 @@ public abstract class AbstractEdge implements Serializable {
     protected Map<String, String> annotations = new HashMap<>();
     private AbstractVertex sourceVertex;
     private AbstractVertex destinationVertex;
-    private static final long serialVersionUID = 1L;
 
     /**
      * Returns the map containing the annotations for this edge.

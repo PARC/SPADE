@@ -31,8 +31,6 @@ import java.util.Map;
  */
 public abstract class AbstractVertex implements Serializable {
 
-    private static final long serialVersionUID = 1L;
-
     /**
      * A map containing the annotations for this vertex.
      */

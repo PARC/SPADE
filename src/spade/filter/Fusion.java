@@ -21,7 +21,6 @@ package spade.filter;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -70,7 +69,8 @@ public class Fusion extends AbstractFilter {
         // <2nd reporter>
         // <1st reporter>.<annotation>=<2nd reporter>.<annotation>
         // -- EOF --
-        try (BufferedReader configReader = new BufferedReader(new FileReader(configFile))) {
+        try {
+            BufferedReader configReader = new BufferedReader(new FileReader(configFile));
             leftReporter = configReader.readLine();
             rightReporter = configReader.readLine();
             FUSED_SOURCE_REPORTER = leftReporter + " + " + rightReporter;
@@ -81,7 +81,7 @@ public class Fusion extends AbstractFilter {
             RuleIdentifier rightRule = new RuleIdentifier(rightRuleString);
             rules.put(leftRule, rightRule);
             rules.put(rightRule, leftRule);
-        } catch (IOException exception) {
+        } catch (Exception exception) {
             Logger.getLogger(Fusion.class.getName()).log(Level.SEVERE, null, exception);
         }
     }

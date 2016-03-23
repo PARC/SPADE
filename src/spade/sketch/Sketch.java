@@ -36,8 +36,7 @@ public class Sketch extends AbstractSketch {
     private static final double falsePositiveProbability = 0.1;
     private static final int expectedSize = 20;
     private static final Logger logger = Logger.getLogger(Sketch.class.getName());
-    private static boolean USE_CACHE = false;
-    private static final long serialVersionUID = 1L;
+    private static final boolean USE_CACHE = false;
 
     public Sketch() {
         matrixFilter = new MatrixFilter(falsePositiveProbability, expectedSize);
@@ -48,8 +47,7 @@ public class Sketch extends AbstractSketch {
     public void putVertex(AbstractVertex incomingVertex) {
     }
 
-    @SuppressWarnings("unchecked")
-	@Override
+    @Override
     public void putEdge(AbstractEdge incomingEdge) {
         try {
             if (incomingEdge.type().equalsIgnoreCase("Used")

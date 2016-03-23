@@ -26,8 +26,6 @@ package spade.core;
  */
 public class Vertex extends AbstractVertex {
 
-    private static final long serialVersionUID = 1L;
-
     /**
      * An empty constructor - an empty map is initialized for the annotations.
      */

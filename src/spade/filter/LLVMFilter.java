@@ -22,15 +22,11 @@ package spade.filter;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.commons.io.IOUtils;
-
 import java.util.ArrayList;
 import spade.core.AbstractEdge;
 import spade.core.AbstractFilter;
@@ -56,7 +52,6 @@ public class LLVMFilter extends AbstractFilter {
 
     @Override
     public boolean initialize(String arguments) {
-        BufferedReader functionFile = null;
         try {
             HashMap<String, String> nodes = new HashMap<>(); // HashMap of id vs name for nodes
             HashMap<String, String> nodesRev = new HashMap<>(); // HashMap of name vs id for nodes
@@ -87,7 +82,7 @@ public class LLVMFilter extends AbstractFilter {
             graphReader.close();
 
             ArrayList<String> traceFunctions = new ArrayList<>();	    
-	    functionFile = new BufferedReader(new FileReader(tokens[1]));
+	    BufferedReader functionFile = new BufferedReader(new FileReader(tokens[1]));
 	
 	    String functionName;
 	    while((functionName = functionFile.readLine()) != null){
@@ -111,10 +106,8 @@ public class LLVMFilter extends AbstractFilter {
                 }
             }
             return true;
-        } catch (IOException exception) {
+        } catch (Exception exception) {
             return false;
-        } finally {
-        	IOUtils.closeQuietly(functionFile);
         }
     }
 
