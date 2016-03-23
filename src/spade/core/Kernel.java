@@ -20,10 +20,10 @@
 package spade.core;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -33,8 +33,10 @@ import java.io.PrintStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.util.AbstractMap.SimpleEntry;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -48,12 +50,15 @@ import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
+
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManagerFactory;
+
+import spade.client.QueryParameters;
 import spade.filter.FinalCommitFilter;
 
 /**
@@ -104,7 +109,7 @@ public class Kernel {
     /**
      * Set of transformers active on the local SPADE instance.
      */
-    public static List<AbstractFilter> transformers;
+    public static List<AbstractTransformer> transformers;
     /**
      * Set of sketches active on the local SPADE instance.
      */
@@ -124,18 +129,18 @@ public class Kernel {
     private static List<ServerSocket> serverSockets;
     private static Set<AbstractReporter> removereporters;
     private static Set<AbstractStorage> removestorages;
-    private static final int BATCH_BUFFER_ELEMENTS = 10000;
+    private static final int BATCH_BUFFER_ELEMENTS = 1000000;
     private static final int MAIN_THREAD_SLEEP_DELAY = 10;
     private static final int REMOVE_WAIT_DELAY = 100;
-    private static final int FIRST_TRANSFORMER = 0;
+    //private static final int FIRST_TRANSFORMER = 0;
     private static final int FIRST_FILTER = 0;
     // Strings for control client
     private static final String ADD_REPORTER_STORAGE_STRING = "add reporter|storage <class name> <initialization arguments>";
-    private static final String ADD_FILTER_TRANSFORMER_STRING = "add filter <class name> <index> <initialization arguments>";
+    private static final String ADD_FILTER_TRANSFORMER_STRING = "add filter|transformer <class name> position=<number> <initialization arguments>";
     private static final String ADD_SKETCH_STRING = "add sketch <class name>";
     private static final String REMOVE_REPORTER_STORAGE_SKETCH_STRING = "remove reporter|storage|sketch <class name>";
-    private static final String REMOVE_FILTER_TRANSFORMER_STRING = "remove filter <index>";
-    private static final String LIST_STRING = "list reporters|storages|filters|sketches|all";
+    private static final String REMOVE_FILTER_TRANSFORMER_STRING = "remove filter|transformer <position number>";
+    private static final String LIST_STRING = "list reporters|storages|filters|sketches|transformers|all";
     private static final String CONFIG_STRING = "config load|save <filename>";
     private static final String EXIT_STRING = "exit";
     private static final String SHUTDOWN_STRING = "shutdown";
@@ -143,16 +148,13 @@ public class Kernel {
     private static final String QUERY_VERTEX_STRING = "<result> = getVertices(expression)";
     private static final String QUERY_EDGE1_STRING = "<result> = getEdges(source vertex id, destination vertex id)";
     private static final String QUERY_PATHS_STRING = "<result> = getPaths(source vertex id, destination vertex id, maximum length)";
-    private static final String QUERY_LINEAGE1_STRING = "<result> = getLineage(vertex id, depth, direction)";
-    private static final String QUERY_LINEAGE2_STRING = "<result> = getLineage(vertex id, depth, direction, terminating expression)";
-    private static final String QUERY_LINEAGE3_STRING = "<result> = getLineage(<result>, depth, direction)";
-    private static final String QUERY_LINEAGE4_STRING = "<result> = getLineage(<result>, depth, direction, terminating expression)";
+    private static final String QUERY_LINEAGE_STRING = "<result> = getLineage(vertex id|<result>, depth, direction[, terminating expression])";
     private static final String QUERY_CHILDREN_STRING = "<result> = <result>.getChildren(expression)";
     private static final String QUERY_PARENTS_STRING = "<result> = <result>.getParents(expression)";
     private static final String QUERY_PRINT_STRING = "<result>.print(annotations)";
     private static final String QUERY_EXPORT_STRING = "export <result> <path>";
     private static final String QUERY_LIST_STRING = "list";
-    // private static final String QUERY_SELECT_STORAGE = "storage Neo4j|SQL (default: Neo4j)";    
+    private static final String QUERY_SELECT_STORAGE = "storage Neo4j|SQL (default: Neo4j)";    
     private static final String QUERY_EXIT_STRING = "exit";
     private static final Logger logger = Logger.getLogger(Kernel.class.getName());
     private static boolean ANDROID_PLATFORM = false;
@@ -163,6 +165,23 @@ public class Kernel {
     private static KeyStore serverKeyStorePrivate;
     public static SSLSocketFactory sslSocketFactory;
     public static SSLServerSocketFactory sslServerSocketFactory;
+    
+    private final static int CONTROL_CLIENT_READ_TIMEOUT = 1000; //time to timeout after when reading from the control client socket
+    
+    static Object controlConnectionsLock = new Object(); //a lock to be able to safely modify 'remainingShutdownAcks'
+    static volatile int remainingShutdownAcks = -1; //to keep track of how many control clients are connected and to how many the shutdown acknowledgement needs to be sent still 
+    static Object allShutdownsAcknowledgedLock = new Object(); //a lock for waiting and notifying when all shutdown acknowledgments have been sent 	
+	static Object shutdownCompleteLock = new Object(); //a lock for waiting and notifying that the kernel has completed shutdown and it is safe to send shutdown acknowledgments
+	static volatile boolean shutdownComplete = false; //a boolean variable to indicate that shutdown has been completed by the kernel
+	
+	/*
+	 * #Description of how the above locks and indicator variables are used to send acknowledgments for 'shutdown' and 'exit' commands back to the control clients.
+	 * #Irrespective of the control client who sent the shutdown command, the ACK is sent to all the connected control clients so that they know also that the kernel has been shutdown.
+	 * 'remainingShutdownAcks' integer is incremented every time a control client connects to the kernel. it is decremented every time a control client exits or shuts down. 
+	 * 'allShutdownsAcknowledgedLock' is used for the kernel to wait on until all the ACKS have been sent to control clients and the last control client notifies the kernel that it is safe to proceed now. 
+	 * 'controlConnectionsLock' is used to safely increment/decrement it.
+	 * 'shutdownComplete' boolean is used to indicate by the kernel to all the control clients that shutdown has been completed. So, all clients wait for this to be set to true by waiting on 'shutdownCompleteLock'. 
+	 */
 
     private static void setupKeyStores() throws Exception {
         String serverPublicPath = Settings.getProperty("spade_root") + "cfg/ssl/server.public";
@@ -246,14 +265,6 @@ public class Kernel {
             @Override
             public void run() {
                 if (!shutdown) {
-                    // Shut down server sockets.
-                    for (ServerSocket socket : serverSockets) {
-                        try {
-                            socket.close();
-                        } catch (IOException ex) {
-                            logger.log(Level.WARNING, null, ex);
-                        }
-                    }
                     // Save current configuration.
                     configCommand("config save " + configFile, NullStream.out);
                     // Shut down all reporters.
@@ -283,6 +294,14 @@ public class Kernel {
                     for (AbstractStorage storage : storages) {
                         storage.shutdown();
                     }
+                    // Shut down server sockets.
+                    for (ServerSocket socket : serverSockets) {
+                        try {
+                            socket.close();
+                        } catch (IOException ex) {
+                            logger.log(Level.WARNING, null, ex);
+                        }
+                    }
                 }
                 // Terminate SPADE
             }
@@ -293,7 +312,7 @@ public class Kernel {
         storages = Collections.synchronizedSet(new HashSet<AbstractStorage>());
         removereporters = Collections.synchronizedSet(new HashSet<AbstractReporter>());
         removestorages = Collections.synchronizedSet(new HashSet<AbstractStorage>());
-        transformers = Collections.synchronizedList(new LinkedList<AbstractFilter>());
+        transformers = Collections.synchronizedList(new LinkedList<AbstractTransformer>());
         filters = Collections.synchronizedList(new LinkedList<AbstractFilter>());
         sketches = Collections.synchronizedSet(new HashSet<AbstractSketch>());
         remoteSketches = Collections.synchronizedMap(new HashMap<String, AbstractSketch>());
@@ -314,8 +333,8 @@ public class Kernel {
 
         // The final transformer is used to send vertex and edge objects to
         // their corresponding result Graph.
-        FinalTransformer finalTransformer = new FinalTransformer();
-        transformers.add(finalTransformer);
+        // FinalTransformer finalTransformer = new FinalTransformer();
+        // transformers.add(finalTransformer);
 
         // Initialize the main thread. This thread performs critical
         // provenance-related
@@ -438,6 +457,7 @@ public class Kernel {
                     serverSockets.add(serverSocket);
                     while (!shutdown) {
                         Socket controlSocket = serverSocket.accept();
+                        controlSocket.setSoTimeout(CONTROL_CLIENT_READ_TIMEOUT); //added time to timeout after when reading from the socket to be able to check if the kernel has been shutdown or not and send shutdown ack to the control clients. 
                         LocalControlConnection thisConnection = new LocalControlConnection(controlSocket);
                         Thread connectionThread = new Thread(thisConnection);
                         connectionThread.start();
@@ -565,9 +585,9 @@ public class Kernel {
      *
      * @param vertex The vertex to be transformed.
      */
-    public static void sendToTransformers(AbstractVertex vertex) {
-        ((AbstractFilter) transformers.get(FIRST_TRANSFORMER)).putVertex(vertex);
-    }
+//    public static void sendToTransformers(AbstractVertex vertex) {
+//        ((AbstractFilter) transformers.get(FIRST_TRANSFORMER)).putVertex(vertex);
+//    }
 
     /**
      * Method called by a Graph object to send edges to transformers before they
@@ -575,9 +595,9 @@ public class Kernel {
      *
      * @param edge The edge to be transformed.
      */
-    public static void sendToTransformers(AbstractEdge edge) {
-        ((AbstractFilter) transformers.get(FIRST_TRANSFORMER)).putEdge(edge);
-    }
+//    public static void sendToTransformers(AbstractEdge edge) {
+//        ((AbstractFilter) transformers.get(FIRST_TRANSFORMER)).putEdge(edge);
+//    }
 
     /**
      * All command strings are passed to this function which subsequently calls
@@ -632,7 +652,9 @@ public class Kernel {
         // Determine whether the command is a load or a save.
         if (tokens[1].equalsIgnoreCase("load")) {
             outputStream.print("Loading configuration... ");
-            try (BufferedReader configReader = new BufferedReader(new FileReader(tokens[2]))) {
+            BufferedReader configReader = null;
+            try {
+                configReader = new BufferedReader(new FileReader(tokens[2]));
                 String configLine;
                 while ((configLine = configReader.readLine()) != null) {
                     addCommand("add " + configLine, outputStream);
@@ -641,6 +663,14 @@ public class Kernel {
                 outputStream.println("error! Unable to open configuration file for reading");
                 logger.log(Level.SEVERE, null, exception);
                 return;
+            }finally{
+            	try{
+            		if(configReader != null){
+            			configReader.close();
+            		}
+            	}catch(Exception e){
+            		logger.log(Level.SEVERE, "Failed to close config reader");
+            	}
             }
             outputStream.println("done");
         } else if (tokens[1].equalsIgnoreCase("save")) {
@@ -675,6 +705,16 @@ public class Kernel {
                     }
                     configWriter.write("\n");
                 }
+                synchronized (transformers) {
+                	for(int i = 0; i<transformers.size(); i++){
+                		String arguments = transformers.get(i).arguments;
+                		configWriter.write("transformer " + transformers.get(i).getClass().getName().split("\\.")[2] + " " + (i + 1));
+                		if(arguments != null){
+                			configWriter.write(" " + arguments);
+                		}
+                		configWriter.write("\n");
+                	}
+				}
                 configWriter.close();
             } catch (Exception exception) {
                 outputStream.println("error! Unable to open configuration file for writing");
@@ -733,10 +773,7 @@ public class Kernel {
         string.append("\t" + QUERY_VERTEX_STRING + "\n");
         string.append("\t" + QUERY_EDGE1_STRING + "\n");
         string.append("\t" + QUERY_PATHS_STRING + "\n");
-        string.append("\t" + QUERY_LINEAGE1_STRING + "\n");
-        string.append("\t" + QUERY_LINEAGE2_STRING + "\n");
-        string.append("\t" + QUERY_LINEAGE3_STRING + "\n");
-        string.append("\t" + QUERY_LINEAGE4_STRING + "\n");
+        string.append("\t" + QUERY_LINEAGE_STRING + "\n");
         string.append("\t" + QUERY_CHILDREN_STRING + "\n");
         string.append("\t" + QUERY_PARENTS_STRING + "\n");
         string.append("\n");        
@@ -746,6 +783,35 @@ public class Kernel {
         // string.append("\t" + QUERY_SELECT_STORAGE + "\n");
         string.append("\t" + QUERY_EXIT_STRING);
         return string.toString();
+    }
+    
+    private static SimpleEntry<String, String> getPositionAndArguments(String partOfCommand){
+    	try{
+	    	int indexOfPosition = partOfCommand.startsWith("position") ? 0 : partOfCommand.indexOf(" position")  < 0 ? -1 : partOfCommand.indexOf(" position") + 1;
+	    	String positionSubstring = partOfCommand.substring(indexOfPosition);
+	    	int indexOfEquals = positionSubstring.indexOf('=');
+	    	String positionValue = "";
+	    	int i = indexOfEquals + 1;
+	    	for(; i < positionSubstring.length(); i++){
+	    		if(positionValue.isEmpty()){
+	    			if(positionSubstring.charAt(i) != ' '){
+	    				positionValue += positionSubstring.charAt(i);
+	    			}
+	    		}else{ //not empty
+	    			if(positionSubstring.charAt(i) != ' '){
+	    				positionValue += positionSubstring.charAt(i);
+	    			}else{
+	    				break;
+	    			}
+	    		}
+	    	}
+	    	i = i < positionSubstring.length() ? i++ : i;
+	    	String arguments = partOfCommand.replace(partOfCommand.substring(indexOfPosition, indexOfPosition+i), "");
+	    	return new SimpleEntry<String, String>(positionValue, arguments);
+		}catch(Exception e){
+    		logger.log(Level.SEVERE, null, e);
+    		return null;
+    	}
     }
 
     /**
@@ -840,17 +906,21 @@ public class Kernel {
                 return;
             }
             String classname = tokens[2];
-            String[] parameters = tokens[3].split("\\s+", 2);
+            SimpleEntry<String, String> positionArgumentsEntry = getPositionAndArguments(tokens[3]);
+            String position = null, arguments = null;
+            if(positionArgumentsEntry != null){
+            	position = positionArgumentsEntry.getKey();
+            	arguments = positionArgumentsEntry.getValue();
+            }
             logger.log(Level.INFO, "Adding filter: {0}", classname);
             outputStream.print("Adding filter " + classname + "... ");
             int index;
             try {
-                index = Integer.parseInt(parameters[0]);
+                index = Integer.parseInt(position) - 1;
             } catch (NumberFormatException numberFormatException) {
-                outputStream.println("error: Index must be a number");
+                outputStream.println("error: Position must be specified and must be a number");
                 return;
             }
-            String arguments = (parameters.length == 1) ? null : parameters[1];
             // Get the filter by classname and create a new instance.
             AbstractFilter filter;
             try {
@@ -865,7 +935,7 @@ public class Kernel {
             filter.arguments = arguments;
             // The argument is the index at which the filter is to be inserted.
             if (index >= filters.size()) {
-                outputStream.println("error: Invalid index");
+                outputStream.println("error: Invalid position");
                 return;
             }
             // Set the next filter of this newly added filter.
@@ -888,49 +958,49 @@ public class Kernel {
                 return;
             }
             String classname = tokens[2];
-            String[] parameters = tokens[3].split("\\s+", 2);
+            SimpleEntry<String, String> positionArgumentsEntry = getPositionAndArguments(tokens[3]);
+            String position = null, arguments = null;
+            if(positionArgumentsEntry != null){
+            	position = positionArgumentsEntry.getKey();
+            	arguments = positionArgumentsEntry.getValue();
+            }
             logger.log(Level.INFO, "Adding transformer: {0}", classname);
             outputStream.print("Adding transformer " + classname + "... ");
             int index;
             try {
-                index = Integer.parseInt(parameters[0]);
+                index = Integer.parseInt(position) - 1;
             } catch (NumberFormatException numberFormatException) {
-                outputStream.println("error: Index must be a number");
+            	outputStream.println("error: Position must be specified and must be a number");
                 return;
             }
-            String arguments = (parameters.length == 1) ? null : parameters[1];
             // Get the transformer by classname and create a new instance.
-            AbstractFilter filter;
+            AbstractTransformer transformer;
             try {
-                filter = (AbstractFilter) Class.forName("spade.filter." + classname).newInstance();
+            	transformer = (AbstractTransformer) Class.forName("spade.transformer." + classname).newInstance();
             } catch (ClassNotFoundException | InstantiationException | IllegalAccessException ex) {
                 outputStream.println("error: Unable to find/load class");
                 logger.log(Level.SEVERE, null, ex);
                 return;
             }
             // Initialize filter if arguments are provided
-            filter.initialize(arguments);
-            filter.arguments = arguments;
-            // The argument is the index at which the transformer is to be
-            // inserted.
-            if (index >= transformers.size()) {
-                outputStream.println("error: Invalid index");
-                return;
+            if(transformer.initialize(arguments)){
+	            transformer.arguments = arguments;
+	            // The argument is the index at which the transformer is to be
+	            // inserted.
+	            if (index > transformers.size() || index < 0) {
+	                outputStream.println("error: Invalid position");
+	                return;
+	            }
+	           
+	            synchronized (transformers) {
+					transformers.add(index, transformer);
+				}
+	            
+	            logger.log(Level.INFO, "Transformer added: {0}", classname);
+	            outputStream.println("done");
+            }else{
+            	outputStream.println("failed");
             }
-            // Set the next transformer of this newly added transformer.
-            filter.setNextFilter((AbstractFilter) transformers.get(index));
-            if (index > 0) {
-                // If the newly added transformer is not the first in the list,
-                // then
-                // then configure the previous transformer in the list to point
-                // to this
-                // newly added transformer as its next.
-                ((AbstractFilter) transformers.get(index - 1)).setNextFilter(filter);
-            }
-            // Add transformer to the list of transformers.
-            transformers.add(index, filter);
-            logger.log(Level.INFO, "Filter added: {0}", classname);
-            outputStream.println("done");
         } else if (tokens[1].equalsIgnoreCase("sketch")) {
             if (tokens.length < 3) {
                 outputStream.println("Usage:");
@@ -1035,29 +1105,25 @@ public class Kernel {
                 outputStream.println();
             }
         } else if (tokens[1].equalsIgnoreCase("transformers")) {
-            if (transformers.size() == 1) {
-                // The size of the transformers list will always be at least 1
-                // because
-                // of the FinalTransformer. The user is not made aware of the
-                // presence of this filter and it is only used for committing
-                // provenance data to the result Graph. Therefore, there is
-                // nothing
-                // to list if the size of the filters list is 1.
+            if (transformers.size() == 0) {
                 outputStream.println("No transformers added");
                 return;
             }
-            outputStream.println((transformers.size() - 1) + " transformer(s) added:");
-            for (int i = 0; i < transformers.size() - 1; i++) {
-                // Loop through the transformers list, printing their names
-                // (except
-                // for the last FinalTransformer).
-                String arguments = transformers.get(i).arguments;
-                outputStream.print("\t" + (i + 1) + ". " + transformers.get(i).getClass().getName().split("\\.")[2]);
-                if (arguments != null) {
-                    outputStream.print(" (" + arguments + ")");
+            outputStream.println((transformers.size()) + " transformer(s) added:");
+            StringBuffer transformersListString = new StringBuffer();
+            synchronized (transformers) {
+            	for (int i = 0; i < transformers.size(); i++) {
+                    // Loop through the transformers list, printing their names
+                    // (except
+                    // for the last FinalTransformer).
+            		transformersListString.append("\t").append((i + 1)).append(". ").append(transformers.get(i).getClass().getName().split("\\.")[2]);
+                    if (transformers.get(i).arguments != null) {
+                        transformersListString.append(" (" + transformers.get(i).arguments + ")");
+                    }
+                    transformersListString.append("\n");
                 }
-                outputStream.println();
-            }
+			}
+            outputStream.print(transformersListString);
         } else if (tokens[1].equalsIgnoreCase("sketches")) {
             if (sketches.isEmpty()) {
                 // Nothing to list if the set of sketches is empty.
@@ -1075,7 +1141,7 @@ public class Kernel {
             listCommand("list reporters " + verbose_token, outputStream);
             listCommand("list storages " + verbose_token, outputStream);
             listCommand("list filters " + verbose_token, outputStream);
-            // listCommand("list transformers " + verbose_token, outputStream);
+            listCommand("list transformers " + verbose_token, outputStream);
             listCommand("list sketches " + verbose_token, outputStream);
         } else {
             outputStream.println("Usage:");
@@ -1186,29 +1252,30 @@ public class Kernel {
                 logger.log(Level.INFO, "Filter Removed: {0}", filterName.split("\\.")[2]);
                 outputStream.println("done");
             } else if (tokens[1].equalsIgnoreCase("transformer")) {
-                // Transformer removal is done by the index number (beginning
-                // from 1).
-                int index = Integer.parseInt(tokens[2]);
-                if ((index <= 0) || (index >= transformers.size())) {
+            	int index;
+            	try{
+            		index = Integer.parseInt(tokens[2]) - 1;
+            	}catch(Exception e){
+            		logger.log(Level.WARNING, "Error: Invalid index (Not a number)");
+                    outputStream.println("Error: Invalid index (Not a number)");
+            		return;
+            	}
+                if ((index < 0) || (index >= transformers.size())) {
                     logger.log(Level.WARNING, "Error: Unable to remove transformer - bad index");
                     outputStream.println("Error: Unable to remove transformer - bad index");
                     return;
                 }
-                String filterName = transformers.get(index - 1).getClass().getName();
-                logger.log(Level.INFO, "Removing transformer {0}", filterName.split("\\.")[2]);
-                outputStream.print("Removing transformer " + filterName.split("\\.")[2] + "... ");
-                transformers.get(index - 1).shutdown();
-                if (index > 1) {
-                    // Update the internal links between transformers by calling
-                    // the setNextFilter
-                    // method on the transformer just before the one being
-                    // removed. The (index-1)
-                    // check is used because this method is not to be called on
-                    // the first transformer.
-                    ((AbstractFilter) transformers.get(index - 2)).setNextFilter((AbstractFilter) transformers.get(index));
+                String transformerName = transformers.get(index).getClass().getName().split("\\.")[2];
+                logger.log(Level.INFO, "Removing transformer {0}", transformerName);
+                outputStream.print("Removing transformer " + transformerName + "... ");
+                AbstractTransformer removed = null;
+                synchronized (transformers) {
+                	removed = transformers.remove(index);
+				}
+                if(removed != null){
+                	removed.shutdown();
                 }
-                transformers.remove(index - 1);
-                logger.log(Level.INFO, "Transformer removed: {0}", filterName.split("\\.")[2]);
+                logger.log(Level.INFO, "Transformer removed: {0}", transformerName);
                 outputStream.println("done");
             } else if (tokens[1].equalsIgnoreCase("sketch")) {
                 boolean found = false;
@@ -1255,6 +1322,24 @@ public class Kernel {
         for (AbstractStorage storage : storages) {
             storage.shutdown();
         }
+        
+        //before closing the sockets notify that the shutdown is complete
+        synchronized (shutdownCompleteLock) {
+        	shutdownComplete = true;
+			shutdownCompleteLock.notifyAll();
+		}
+        
+        //wait for the shutdown acknowledgement to be sent
+        synchronized (allShutdownsAcknowledgedLock) {
+        	while(remainingShutdownAcks != 0){
+				try{
+					allShutdownsAcknowledgedLock.wait();
+				}catch(Exception e){
+					logger.log(Level.SEVERE, null, e);
+				}
+        	}
+		}
+        
         // Shut down server sockets.
         for (ServerSocket socket : serverSockets) {
             try {
@@ -1310,6 +1395,7 @@ final class NullStream {
 
 class LocalControlConnection implements Runnable {
 
+	private final Logger logger = Logger.getLogger(LocalControlConnection.class.getName());
     Socket controlSocket;
 
     LocalControlConnection(Socket socket) {
@@ -1319,6 +1405,13 @@ class LocalControlConnection implements Runnable {
     @Override
     public void run() {
         try {
+        	synchronized (Kernel.controlConnectionsLock) {
+        		if(Kernel.remainingShutdownAcks == -1){
+            		Kernel.remainingShutdownAcks = 1;
+            	}else{
+            		Kernel.remainingShutdownAcks++;
+            	}
+			}
             OutputStream outStream = controlSocket.getOutputStream();
             InputStream inStream = controlSocket.getInputStream();
 
@@ -1327,16 +1420,61 @@ class LocalControlConnection implements Runnable {
             try {
                 while (!Kernel.shutdown) {
                     // Commands read from the input stream and executed.
-                    String line = controlInputStream.readLine();
-                    if (line == null || line.equalsIgnoreCase("exit")) {
-                        break;
-                    }
-                    Kernel.executeCommand(line, controlOutputStream);
-                    // An empty line is printed to let the client know that the
-                    // command output is complete.
-                    controlOutputStream.println("");
+                	try{
+	                    String line = controlInputStream.readLine();
+	                    if (line == null || line.equalsIgnoreCase("exit")) {
+	                    	controlOutputStream.println("ACK[exit]");
+	                    	synchronized (Kernel.controlConnectionsLock) {
+	                    		Kernel.remainingShutdownAcks--;
+	                    	}
+	                        break;
+	                    }
+	                    
+	                    Kernel.executeCommand(line, controlOutputStream);
+	                    
+	                    if("shutdown".equals(line)){
+	                    	break;
+	                    }else{
+	                    	// An empty line is printed to let the client know that the
+	                        // command output is complete.
+	                    	controlOutputStream.println("");
+	                    }
+                	}catch(SocketTimeoutException exception){
+                		//logger.log(Level.SEVERE, null, exception);
+                		//normal exception. no need to log it. timeout added to be able to shutdown when shutdown set to true by another client
+                	}
+                }
+                if(Kernel.shutdown){ //to differentiate between exit and shutdown
+                	//wait for Kernel to shutdown everything before replying with the shutdown ack. Will be sent to all control clients irrespective of who called shutdown
+                	synchronized (Kernel.shutdownCompleteLock) {
+                		while(!Kernel.shutdownComplete){
+							try{
+								Kernel.shutdownCompleteLock.wait();
+							}catch(Exception e){
+								logger.log(Level.SEVERE, null, e);
+							}
+                		}
+					}
+                	
+                	try{ //doing this in a try catch to make sure the lock code (below) is always executed.
+                		controlOutputStream.println("ACK[shutdown]");
+                		controlOutputStream.flush();
+                	}catch(Exception e){
+                		logger.log(Level.SEVERE, null, e);
+                	}
+                	
+                	synchronized (Kernel.allShutdownsAcknowledgedLock) {
+                		synchronized (Kernel.controlConnectionsLock) {
+                			Kernel.remainingShutdownAcks--;
+	                		if(Kernel.remainingShutdownAcks == 0){ //all acks sent. safe to let the kernel proceed
+	                			Kernel.allShutdownsAcknowledgedLock.notifyAll(); 
+	                		}
+                		}
+					}
+                	
                 }
             } catch (IOException e) {
+            	logger.log(Level.SEVERE, null, e);
                 // Connection broken?
             } finally {
                 controlInputStream.close();
@@ -1349,7 +1487,7 @@ class LocalControlConnection implements Runnable {
                 }
             }
         } catch (Exception ex) {
-            Logger.getLogger(LocalControlConnection.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, null, ex);
         }
     }
 }
@@ -1377,10 +1515,11 @@ class LocalQueryConnection implements Runnable {
                     break;
                 } else {
                     Graph resultGraph = Query.executeQuery(line, false);
-                    if (resultGraph != null) {
+                    if(resultGraph != null){
+                    	resultGraph = iterateTransformers(resultGraph, line);
                         queryOutputStream.writeObject("graph");
                         queryOutputStream.writeObject(resultGraph);
-                    } else {
+                	}else {
                         queryOutputStream.writeObject(Kernel.getQueryCommands());
                     }
                 }
@@ -1395,4 +1534,27 @@ class LocalQueryConnection implements Runnable {
             Logger.getLogger(LocalQueryConnection.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
+    
+    public Graph iterateTransformers(Graph graph, String query){
+		synchronized (Kernel.transformers) {
+			QueryParameters digQueryParams = QueryParameters.parseQuery(query);
+			for(int i = 0; i< Kernel.transformers.size(); i++){
+				AbstractTransformer transformer = Kernel.transformers.get(i);
+				if(graph != null){
+					try{
+						graph = transformer.putGraph(graph, digQueryParams);
+						if(graph != null){
+							graph.commitIndex(); //commit after every transformer to enable reading without error
+						}
+					}catch(Exception e){
+						Logger.getLogger(getClass().getName()).log(Level.SEVERE, null, e);
+					}
+				}else{
+					break;
+				}
+			}
+		} 
+		
+		return graph;
+	}
 }

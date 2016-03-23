@@ -21,38 +21,88 @@
  */
 package spade.utility;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileWriter;
+import java.io.FileFilter;
+import java.util.Scanner;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.lang.SecurityException;
+import java.lang.InterruptedException;
+import java.util.Formatter;
+import java.text.DecimalFormat;
+import org.apache.commons.io.FileUtils;
+import java.net.URL;
 import java.net.MalformedURLException;
+import org.json.JSONObject;
+import org.json.JSONArray;
+import org.json.JSONException;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.Arrays;
+import javax.xml.bind.DatatypeConverter;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ConcurrentHashMap;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.text.DecimalFormat;
-import java.util.Formatter;
-import java.util.HashMap;
-import java.util.Scanner;
-import java.util.logging.Level;
-import org.apache.commons.io.FileUtils;
-import org.json.JSONException;
-import org.json.JSONObject;
-import spade.reporter.Bitcoin;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.FileReader;
+import java.io.OutputStreamWriter;
+import java.io.FileInputStream;
+import java.io.Writer;
+
 import spade.reporter.bitcoin.Block;
 import spade.reporter.bitcoin.Transaction;
 import spade.reporter.bitcoin.Vin;
 import spade.reporter.bitcoin.Vout;
+import spade.reporter.Bitcoin;
+import spade.core.Settings;
 
 public class BitcoinTools {
 
-    public final String BITCOIN_RPC_TOTAL_BLOCKS = "bitcoin-cli getblockcount";
-    public final String BITCOIN_RPC_GET_BLOCK_HASH_FORMAT = "bitcoin-cli getblockhash %1$1s";
+	private String BITCOIN_TOOLS_PATH;
+    public final String BITCOIN_RPC_TOTAL_BLOCKS;
+    public final String BITCOIN_RPC_GET_BLOCK_HASH_FORMAT;
     public final String BITCOIN_REST_GET_BLOCK_FORMAT = "http://localhost:8332/rest/block/%1$1s.json";
-    public boolean BLOCK_JSON_DUMP_ENABLED = true;
+    public final boolean BLOCK_JSON_DUMP_ENABLED = true;
     public String BLOCK_JSON_DUMP_PATH = Bitcoin.BITCOIN_STAGING_DIR + "/blockcache/";
     public String BLOCK_JSON_FILE_FORMAT = Bitcoin.BITCOIN_STAGING_DIR + "/blockcache/%1$1s.json";
+
+    public BitcoinTools() {
+		File bitcoinToolsFilePath = new File(Bitcoin.BITCOIN_TOOLS_PATH_FILE);
+		BITCOIN_TOOLS_PATH = "";
+		if(bitcoinToolsFilePath.exists() && !bitcoinToolsFilePath.isDirectory()) {
+			try {
+			    BufferedReader br = new BufferedReader(new FileReader(bitcoinToolsFilePath));
+			    BITCOIN_TOOLS_PATH = br.readLine() + "/";
+			} catch (Exception exception) {
+
+			}
+		}
+
+    	BITCOIN_RPC_TOTAL_BLOCKS = BITCOIN_TOOLS_PATH + "bitcoin-cli getblockcount";
+    	BITCOIN_RPC_GET_BLOCK_HASH_FORMAT = BITCOIN_TOOLS_PATH + "bitcoin-cli getblockhash %1$1s";
+
+    }
 
     public static String execCmd(String cmd) throws IOException {
         Scanner s = new Scanner(Runtime.getRuntime().exec(cmd).getInputStream()).useDelimiter("\\A");
@@ -72,7 +122,7 @@ public class BitcoinTools {
         }
 
         try {
-            FileUtils.copyURLToFile(new URL(new Formatter().format(BITCOIN_REST_GET_BLOCK_FORMAT, blockHash).toString()), 
+            FileUtils.copyURLToFile(new URL(new Formatter().format(BITCOIN_REST_GET_BLOCK_FORMAT, blockHash).toString()),
                         new File(new Formatter().format(BLOCK_JSON_FILE_FORMAT, blockIndex).toString()));
         } catch (MalformedURLException ex) {
             Bitcoin.log(Level.SEVERE, "REST URL can not be opened or IO error occured.", ex);
@@ -84,10 +134,8 @@ public class BitcoinTools {
         return true;
     }
 
-
     public boolean dumpBlocks() {
         int totalBlocksToDownload=-1;
-        int totalBlocksDownloaded=-1;
         try {
             String totalBlocksStr = execCmd(BITCOIN_RPC_TOTAL_BLOCKS);
             totalBlocksToDownload = Integer.parseInt(totalBlocksStr.trim());
@@ -96,6 +144,24 @@ public class BitcoinTools {
             return false;
         }
 
+        return dumpBlocks(totalBlocksToDownload);
+    }
+
+    public boolean dumpBlocks(int totalBlocksToDownload) {
+        int totalBlocksAvaliable=-1;
+        try {
+            String totalBlocksStr = execCmd(BITCOIN_RPC_TOTAL_BLOCKS);
+            totalBlocksAvaliable = Integer.parseInt(totalBlocksStr.trim());
+        } catch (IOException e) {
+            Bitcoin.log(Level.SEVERE, "Can not connect and/or call RPC from bitcoin-cli client. Make sure bitcoind is running.", e);
+            return false;
+        }
+
+        if (totalBlocksAvaliable < totalBlocksToDownload) {
+            totalBlocksToDownload = totalBlocksAvaliable;
+        }
+
+        int totalBlocksDownloaded=-1;
         try {
             File blockDumpDir = new File(BLOCK_JSON_DUMP_PATH);
             if (!blockDumpDir.exists()) {
@@ -107,15 +173,18 @@ public class BitcoinTools {
         } catch (SecurityException ex) {
             Bitcoin.log(Level.SEVERE, "Can not create directory for dumping block json files.", ex);
             return false;
-        } 
+        }
 
         String pattern = "#.##";
         DecimalFormat decimalFormat = new DecimalFormat(pattern);
+
         for (int i = 0; i < totalBlocksToDownload; i++) {
             String file_path = new Formatter().format(BLOCK_JSON_FILE_FORMAT, i).toString();
             File f = new File(file_path);
             if (!f.exists()) {
+
                 dumpBlock(i);
+
                 System.out.print("| Total Blocks To Download: " + totalBlocksToDownload
                                  + " | Currently Downloading Block: " + i
                                  + " | Percentage Completed: " + decimalFormat.format(i*100.0/totalBlocksToDownload)
@@ -123,7 +192,7 @@ public class BitcoinTools {
             }
         }
 
-        System.out.println("\n\ndone!");
+        System.out.println("\n\ndone with dumping blocks!");
         return true;
     }
 
@@ -156,15 +225,21 @@ public class BitcoinTools {
         }
 
         return new Block(new JSONObject(jsonString.toString()));
-    }    
+    }
 
     public static void main(String[] arguments) {
+
         try{
+            HashMap<String, String> args = new HashMap<String, String>();
             for (String pair : arguments) {
                 if (pair.equals("help")) {
-                    System.out.println("mode=downloadBlocksOnly|createCSVes [upto=<block index>]");
-                    System.out.println("mode=downloadBlocksOnly - Downloads blocks json files in local cache");
-                    System.out.println("mode=createCSVes - Creates CSV files required for batch importer. Must be accompanied with 'upto' opiton");
+                    System.out.println("mode=downloadBlocksOnly [upto=<block index>]");
+                    System.out.println("mode=createCSVes upto=<block index>");
+                    System.out.println("mode=createIndexes path=<path to Neo4j database>");
+
+                    System.out.println("mode=downloadBlocksOnly - Downloads blocks json files in local cache.");
+                    System.out.println("mode=createCSVes - Creates CSV files required for batch importer. Must be accompanied with 'upto' opiton.");
+                    System.out.println("mode=createIndexes Creates indexes for given Neo4j database.");
                     System.out.println("help - prints help menu");
                     break;
                 }
@@ -173,24 +248,37 @@ public class BitcoinTools {
                 String key = keyvalue[0];
                 String value = keyvalue[1];
 
-                if (key.equals("mode") && value.equals("downloadBlocksOnly")) {
-                    BitcoinTools bitcoinTools = new BitcoinTools();
-                    bitcoinTools.dumpBlocks();
-                    break;
-                }
+                args.put(key, value);
 
-                if (key.equals("upto")) {
-                    int upto = Integer.parseInt(value);
-                    try {
-                        CSVWriter csvWriter = new CSVWriter(0,upto);
-                        csvWriter.writeBlocksToCSV(0,upto);
-                        csvWriter.closeCsves();
-                    } catch (IOException ex) {
-                        Bitcoin.log(Level.SEVERE, "", ex);
-                    }
+            }
+
+            if (args.get("mode").equals("downloadBlocksOnly")) {
+                BitcoinTools bitcoinTools = new BitcoinTools();
+                if (args.get("upto") == null) {
+                    bitcoinTools.dumpBlocks();
+                } else {
+                    int upto = Integer.parseInt(args.get("upto"));
+                    bitcoinTools.dumpBlocks(upto);
                 }
             }
-        } catch (NullPointerException e) {
+
+            if (args.get("mode").equals("createCSVes")) {
+                int upto = Integer.parseInt(args.get("upto"));
+                try {
+                    CSVWriter csvWriter = new CSVWriter(0,upto);
+                    csvWriter.writeBlocksToCSV(0,upto);
+                    csvWriter.closeCsves();
+                } catch (IOException ex) {
+                    Bitcoin.log(Level.SEVERE, "", ex);
+                }
+            }
+
+            if (args.get("mode").equals("createIndexes")) {
+                String path = args.get("path");
+                spade.storage.Neo4j.index(path, true);
+            }
+
+        } catch (Exception e) {
             Bitcoin.log(Level.SEVERE, "", e);
         }
     }
@@ -227,7 +315,7 @@ class CSVWriter {
                             CSV_FILE_ADDRESS, startIndex, endIndex).toString();
         CSV_FILE_EDGES = new Formatter().format(
                             CSV_FILE_EDGES, startIndex, endIndex).toString();
-    
+
 
         nodesFileObj = new FileWriter(CSV_FILE_BLOCKS, false);
         txFileObj = new FileWriter(CSV_FILE_TX, false);
@@ -245,20 +333,20 @@ class CSVWriter {
 
     public void writeRow(final int csvFile, final String line) throws IOException {
         switch(csvFile) {
-            case BLOCKS_CSV:     
-                nodesFileObj.append(line + "\n"); 
+            case BLOCKS_CSV:
+                nodesFileObj.append(line + "\n");
                 break;
             case TX_CSV:
-                txFileObj.append(line + "\n"); 
+                txFileObj.append(line + "\n");
                 break;
             case PAYMENT_CSV:
-                paymentFileObj.append(line + "\n"); 
+                paymentFileObj.append(line + "\n");
                 break;
             case ADDRESS_CSV:
-                addressFileObj.append(line + "\n"); 
+                addressFileObj.append(line + "\n");
                 break;
             case EDGES_CSV:
-                edgesFileObj.append(line + "\n"); 
+                edgesFileObj.append(line + "\n");
                 break;
         }
     }
@@ -278,23 +366,41 @@ class CSVWriter {
 
     int lastnodeId = -1;
     HashMap<Integer,Integer> nodeHashDict = new HashMap<Integer, Integer>();
-    public int writeNodeToCSVIfRequired(final int csvFile, String line) throws IOException {
-        Integer index = nodeHashDict.get(line.hashCode());
+    public int writeNodeToCSV(final int csvFile, String line) throws IOException {
+        return writeNodeToCSV(csvFile, line, line.hashCode());
+    }
+
+    public int writeNodeToCSV(final int csvFile, String line, int lineHash) throws IOException {
+        // the whole point of this function is to stop recalculating line hash
+        lastnodeId = lastnodeId + 1;
+        nodeHashDict.put(lineHash, lastnodeId);
+        writeRow(csvFile,
+            lastnodeId + "," +
+            line
+            );
+        return lastnodeId;
+    }
+
+    public int writeNodeToCSVIfRequired(final int csvFile, String line, boolean occursOnce) throws IOException {
+        int lineHash = line.hashCode();
+        Integer index = nodeHashDict.get(lineHash);
         if (index == null) {
-            lastnodeId = lastnodeId + 1;
-            nodeHashDict.put(line.hashCode(), lastnodeId);
-            writeRow(csvFile,
-                lastnodeId + "," +
-                line
-                );
-            return lastnodeId;
+            return writeNodeToCSV(csvFile, line, lineHash);
+        } else if (occursOnce) {
+            // payment case
+            nodeHashDict.remove(lineHash);
         }
         return index.intValue();
     }
 
+    public int writeNodeToCSVIfRequired(final int csvFile, String line) throws IOException {
+        return writeNodeToCSVIfRequired(csvFile, line, false);
+    }
+
+
     public int writeBlockToCSV(Block block, int lastBlockId) throws IOException {
-        int block_id = writeNodeToCSVIfRequired(BLOCKS_CSV,
-            "Activity," + 
+        int block_id = writeNodeToCSV(BLOCKS_CSV,
+            "Activity," +
             block.getHash() + "," +
             block.getHeight() + "," +
             block.getChainwork() +"," +
@@ -308,18 +414,18 @@ class CSVWriter {
             String coinbase_value = tx.getCoinbaseValue();
             int tx_id;
             if (coinbase_value != null) {
-                tx_id = writeNodeToCSVIfRequired(TX_CSV,
-                    "Activity," + 
+                tx_id = writeNodeToCSV(TX_CSV,
+                    "Activity," +
                     ","+
-                    tx.getLocktime() + "," + 
+                    tx.getLocktime() + "," +
                     coinbase_value + "," +
                     "VERTEX"
                     );
             } else {
-                tx_id = writeNodeToCSVIfRequired(TX_CSV,
+                tx_id = writeNodeToCSV(TX_CSV,
                     "Activity," +
                     tx.getId() + "," +
-                    tx.getLocktime() + "," + 
+                    tx.getLocktime() + "," +
                     "," +
                     "VERTEX"
                     );
@@ -329,30 +435,30 @@ class CSVWriter {
                 tx_id + "," +
                 block_id + "," +
                 "EDGE," +
-                "WasInformedBy,"   
+                "WasInformedBy,"
                 );
 
             for (Vin vin: tx.getVins()) {
                 if (!vin.isCoinbase()) {
                     int payment_id = writeNodeToCSVIfRequired(PAYMENT_CSV,
-                        "Entity," + 
+                        "Entity," +
                         vin.getTxid() + "," +
                         vin.getN() + "," +
                         "VERTEX"
-                        );
+                        , true);
 
                     writeRow(EDGES_CSV,
                         tx_id + "," +
                         payment_id +"," +
                         "EDGE," +
-                        "Used," 
+                        "Used,"
                         );
                 }
             }
 
             for (Vout vout: tx.getVouts()) {
-                int payment_id = writeNodeToCSVIfRequired(PAYMENT_CSV,
-                    "Entity," + 
+                int payment_id = writeNodeToCSV(PAYMENT_CSV,
+                    "Entity," +
                     tx.getId() + "," +
                     vout.getN() + "," +
                     "VERTEX"
@@ -362,11 +468,12 @@ class CSVWriter {
                     payment_id + "," +
                     tx_id + "," +
                     "EDGE," +
-                    "WasGeneratedBy," + 
+                    "WasGeneratedBy," +
                     vout.getValue()
                     );
 
                 for (String address: vout.getAddresses()) {
+                    // remove this once you have get it back.
                     int address_id = writeNodeToCSVIfRequired(ADDRESS_CSV,
                         "Agent," +
                         address + "," +
@@ -376,7 +483,7 @@ class CSVWriter {
                     writeRow(EDGES_CSV,
                         payment_id + "," +
                         address_id +"," +
-                        "EDGE," + 
+                        "EDGE," +
                         "WasAttributedTo,"
                         );
                 }
@@ -399,35 +506,98 @@ class CSVWriter {
     public void writeBlocksToCSV(int startIndex, int endIndex) {
         // Block block, int lastBlockId
         int lastBlockId = -1;
-        BitcoinTools bitcoinTools = new BitcoinTools();
+        final BitcoinTools bitcoinTools = new BitcoinTools();
 
         String pattern = "#.##";
         DecimalFormat decimalFormat = new DecimalFormat(pattern);
 
+        final ConcurrentHashMap<Integer, Block> blockMap = new ConcurrentHashMap<Integer, Block>();
+        final AtomicInteger currentBlock = new AtomicInteger(startIndex);
+        final int stopIndex = endIndex;
+        final int totalThreads = Runtime.getRuntime().availableProcessors();
+
+        class BlockFetcher implements Runnable {
+
+            public void run() {
+
+                while (true) {
+                    if (blockMap.size() > totalThreads * 5) { // max objects to hold in memory max 1 MB * totalThreads * factor
+                        try {
+                            Thread.sleep(100);
+                            continue;
+                        } catch (Exception exception) {
+                        }
+                    }
+
+                    int blockToFetch = currentBlock.getAndIncrement();
+                    try {
+                        blockMap.put(blockToFetch, bitcoinTools.getBlock(blockToFetch));
+                    } catch (JSONException exception) {
+                        Bitcoin.log(Level.SEVERE, "Block " + blockToFetch + " has invalid json. Redownloading.", exception);
+                        try {
+                            blockMap.put(blockToFetch, bitcoinTools.getBlock(blockToFetch));
+                        } catch (JSONException ex) {
+                            Bitcoin.log(Level.SEVERE, "Block " + blockToFetch + " couldn't be included in CSV.", ex);
+                        }
+                    }
+                    if (blockToFetch >= stopIndex) {
+                        break;
+                    }
+                }
+            }
+        }
+
+        ArrayList<Thread> workers = new ArrayList<Thread>();
+        for (int i=0; i<totalThreads; i++) {
+            Thread th = new Thread(new BlockFetcher());
+            workers.add(th);
+            th.start();
+        }
+
+        int percentageCompleted = 0;
+
         for (int i=startIndex; i<endIndex; i++) {
+
             try {
-                lastBlockId = writeBlockToCSV(bitcoinTools.getBlock(i), lastBlockId);
 
-                System.out.print("| Total Blocks To Process: " + (endIndex - startIndex)
-                        + " | Currently at Block: " + (i-startIndex+1)
-                        + " | Percentage Completed: " + decimalFormat.format((i-startIndex+1)*100.0/(endIndex-startIndex))
-                        + " |\r");
+                Block block;
+                while (!blockMap.containsKey(i)) {
 
-            } catch (JSONException ex) {
-                Bitcoin.log(Level.SEVERE, "Block " + i + " has invalid json. Redownloading.", ex);
-                bitcoinTools.dumpBlock(i);
-                i=i-1;
-                continue;
+                }
+                block = blockMap.get(i);
+                blockMap.remove(i);
+                lastBlockId = writeBlockToCSV(block, lastBlockId);
+
+                if ((((i-startIndex+1)*100)/(endIndex-startIndex)) > percentageCompleted) {
+                    Runtime rt = Runtime.getRuntime();
+                    long totalMemory = rt.totalMemory()/ 1024 / 1024;
+                    long freeMemory = rt.freeMemory()/ 1024 / 1024;
+                    long usedMemory = totalMemory - freeMemory;
+                    System.out.print("| Cores: " + rt.availableProcessors()
+                            + " | Threads: " + totalThreads
+                            + " | Heap (MB) - total: " + totalMemory + ", %age free: " + (freeMemory*100)/totalMemory
+                            + " | At Block: " + (i-startIndex+1) + " / " + (endIndex - startIndex)
+                            + " | Percentage Completed: " + percentageCompleted
+                            // + " |\r");
+                            + " |\n");
+                }
+
+                percentageCompleted = ((i-startIndex+1)*100)/(endIndex-startIndex);
+
             } catch (IOException ex) {
                 Bitcoin.log(Level.SEVERE, "Unexpected IOException. Stopping CSV creation.", ex);
                 break;
             }
         }
-        System.out.println("\n\ndone!");
 
+        for (int i=0; i<totalThreads; i++) {
+            try {
+                workers.get(i).interrupt();
+                workers.get(i).join();
+            } catch (InterruptedException exception) {
+            }
+        }
+
+        System.out.println("\n\ndone with creating CSVes!");
     }
-
 }
-
-
-
